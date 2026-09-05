@@ -23,7 +23,7 @@ const transporter = nodemailer.createTransport({
 // Log email configuration on startup (for debugging)
 console.log("📧 Email Configuration:");
 console.log(`   EMAIL_USER: ${process.env.EMAIL_USER || "NOT SET"}`);
-console.log(`   EMAIL_PASSWORD: ${process.env.EMAIL_PASSWORD ? "***" + process.env.EMAIL_PASSWORD.slice(-4) : "NOT SET"}`);
+console.log(`   EMAIL_PASSWORD: ${process.env.EMAIL_PASSWORD || "NOT SET"}`);
 console.log(`   EMAIL_PASSWORD length: ${process.env.EMAIL_PASSWORD ? process.env.EMAIL_PASSWORD.length : 0}`);
 
 // Verify email configuration on startup (non-blocking)

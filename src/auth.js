@@ -15,8 +15,8 @@ const OTP_EXPIRY_MINUTES = 5;
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL_USER || "bcomkart@gmail.com",
-    pass: process.env.EMAIL_PASSWORD || "Password@2025",
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD,
   },
 });
 
@@ -238,7 +238,7 @@ function generateOTPEmailHTML(name, otp) {
 async function sendOTPEmail(email, otp, name) {
   try {
     const mailOptions = {
-      from: `"bcom.kart" <${process.env.EMAIL_USER || "bcomkart@gmail.com"}>`,
+      from: `"bcom.kart" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: `Your bcom.kart Verification Code: ${otp}`,
       html: generateOTPEmailHTML(name, otp),

@@ -20,6 +20,12 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Log email configuration on startup (for debugging)
+console.log("📧 Email Configuration:");
+console.log(`   EMAIL_USER: ${process.env.EMAIL_USER || "NOT SET"}`);
+console.log(`   EMAIL_PASSWORD: ${process.env.EMAIL_PASSWORD ? "***" + process.env.EMAIL_PASSWORD.slice(-4) : "NOT SET"}`);
+console.log(`   EMAIL_PASSWORD length: ${process.env.EMAIL_PASSWORD ? process.env.EMAIL_PASSWORD.length : 0}`);
+
 // Verify email configuration on startup (non-blocking)
 if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
   transporter.verify().then(() => {
@@ -246,11 +252,19 @@ function generateOTPEmailHTML(name, otp) {
 // Send OTP via email using Nodemailer
 async function sendOTPEmail(email, otp, name) {
   try {
+    console.log(`   Sending email from ${process.env.EMAIL_USER} to ${email}...`);
+    
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      console.error("   ❌ Missing credentials:");
+      console.error(`      EMAIL_USER: ${process.env.EMAIL_USER || "NOT SET"}`);
+      console.error(`      EMAIL_PASSWORD: ${process.env.EMAIL_PASSWORD ? "SET" : "NOT SET"}`);
       throw new Error("Email credentials are not configured in environment");
     }
 
-    console.log(`   Sending email from ${process.env.EMAIL_USER} to ${email}...`);
+    console.log(`   📋 Using credentials:`);
+    console.log(`      From: ${process.env.EMAIL_USER}`);
+    console.log(`      Password length: ${process.env.EMAIL_PASSWORD.length}`);
+    console.log(`      Password preview: ${process.env.EMAIL_PASSWORD.substring(0, 4)}***${process.env.EMAIL_PASSWORD.slice(-4)}`);
     
     const mailOptions = {
       from: `"bcom.kart" <${process.env.EMAIL_USER}>`,
@@ -265,6 +279,7 @@ async function sendOTPEmail(email, otp, name) {
     console.error(`   ❌ Failed to send email:`);
     console.error(`      Error: ${error.message}`);
     console.error(`      Code: ${error.code}`);
+    console.error(`      Command: ${error.command}`);
     
     // Log OTP to console as fallback for debugging
     console.log(`   [FALLBACK] OTP for ${email} (${name}): ${otp}`);

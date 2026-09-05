@@ -8,7 +8,7 @@ import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Coupon, Order, Product, User } from "./models.js";
-import { requireAdmin, requireAuth, signUser, requestOTP, verifyOTP, loginWithPassword } from "./auth.js";
+import { requireAdmin, requireAuth, signUser, checkEmailExists, requestOTP, verifyOTP, loginWithPassword } from "./auth.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -68,6 +68,7 @@ app.post("/api/auth/google", asyncRoute(async (req, res) => {
 }));
 app.post("/api/auth/request-otp", asyncRoute(requestOTP));
 app.post("/api/auth/verify-otp", asyncRoute(verifyOTP));
+app.post("/api/auth/check-email", asyncRoute(checkEmailExists));
 app.post("/api/auth/login", asyncRoute(loginWithPassword));
 app.get("/api/auth/me", requireAuth, (req, res) => res.json({ user: req.user }));
 

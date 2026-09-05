@@ -302,6 +302,24 @@ async function sendOTPEmail(email, otp, name) {
   }
 }
 
+// Check if email exists (without sending OTP)
+export async function checkEmailExists(req, res) {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: normalizedEmail }).lean();
+
+    res.json({ exists: !!existingUser });
+  } catch (error) {
+    console.error("Error checking email:", error);
+    res.status(500).json({ message: "Failed to check email" });
+  }
+}
+
 // Store OTP in memory with expiry
 export async function requestOTP(req, res) {
   try {
@@ -321,14 +339,6 @@ export async function requestOTP(req, res) {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
-    
-    // Check if user already exists
-    const existingUser = await User.findOne({ email: normalizedEmail }).lean();
-    if (existingUser) {
-      console.log(`   User ${normalizedEmail} already exists`);
-      return res.status(400).json({ message: "Account already exists. Please sign in with your email and password." });
-    }
-
     const otp = generateOTP();
     const expiresAt = Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000;
 

@@ -20,6 +20,15 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Verify email configuration on startup (non-blocking)
+if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+  transporter.verify().then(() => {
+    console.log("✅ Email service is ready");
+  }).catch((error) => {
+    console.error("❌ Email service configuration error:", error.message);
+  });
+}
+
 export function signUser(user) {
   return jwt.sign({ userId: user.userId, role: user.role, email: user.email }, secret(), { expiresIn: "7d" });
 }
@@ -237,6 +246,12 @@ function generateOTPEmailHTML(name, otp) {
 // Send OTP via email using Nodemailer
 async function sendOTPEmail(email, otp, name) {
   try {
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      throw new Error("Email credentials are not configured in environment");
+    }
+
+    console.log(`   Sending email from ${process.env.EMAIL_USER} to ${email}...`);
+    
     const mailOptions = {
       from: `"bcom.kart" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -244,21 +259,41 @@ async function sendOTPEmail(email, otp, name) {
       html: generateOTPEmailHTML(name, otp),
     };
 
-    await transporter.sendMail(mailOptions);
-    console.log(`✅ OTP email sent successfully to ${email}`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`   ✅ Email sent (Message ID: ${info.messageId})`);
   } catch (error) {
-    console.error(`❌ Failed to send OTP email to ${email}:`, error.message);
+    console.error(`   ❌ Failed to send email:`);
+    console.error(`      Error: ${error.message}`);
+    console.error(`      Code: ${error.code}`);
+    
     // Log OTP to console as fallback for debugging
-    console.log(`[FALLBACK] OTP for ${email} (${name}): ${otp}`);
-    throw new Error("Failed to send verification email");
+    console.log(`   [FALLBACK] OTP for ${email} (${name}): ${otp}`);
+    
+    // Re-throw with more specific error message
+    if (error.code === "EAUTH") {
+      throw new Error("Email authentication failed - check EMAIL_USER and EMAIL_PASSWORD");
+    } else if (error.code === "ESOCKET") {
+      throw new Error("Cannot connect to email service - check internet connection");
+    }
+    throw error;
   }
 }
 
 // Store OTP in memory with expiry
 export async function requestOTP(req, res) {
   try {
+    console.log("📧 OTP request received");
+    console.log("   Request body:", { name: req.body.name, email: req.body.email, password: req.body.password ? "***" : undefined });
+    
+    // Validate email configuration
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      console.error("❌ Email service not configured: EMAIL_USER or EMAIL_PASSWORD is missing");
+      return res.status(503).json({ message: "Email service is not configured on the server" });
+    }
+
     const { name, email, password } = req.body;
     if (!name || !email || !password) {
+      console.warn("❌ Missing required fields:", { name: !!name, email: !!email, password: !!password });
       return res.status(400).json({ message: "Name, email, and password are required" });
     }
 
@@ -267,14 +302,18 @@ export async function requestOTP(req, res) {
     const expiresAt = Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000;
 
     otpStore.set(normalizedEmail, { otp, expiresAt, name: name.trim(), password });
+    console.log(`   OTP generated for ${normalizedEmail}: ${otp}`);
     
     // Send OTP email
     await sendOTPEmail(normalizedEmail, otp, name);
 
+    console.log(`✅ OTP request successful for ${normalizedEmail}`);
     res.json({ message: `Verification code sent to ${normalizedEmail}` });
   } catch (error) {
-    console.error("Error requesting OTP:", error);
-    res.status(500).json({ message: "Failed to send verification code" });
+    console.error("❌ Error in requestOTP:", error);
+    console.error("   Error message:", error.message);
+    console.error("   Error stack:", error.stack);
+    res.status(500).json({ message: error.message || "Failed to send verification code" });
   }
 }
 

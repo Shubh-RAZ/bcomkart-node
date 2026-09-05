@@ -8,7 +8,7 @@ import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Coupon, Order, Product, User } from "./models.js";
-import { requireAdmin, requireAuth, signUser } from "./auth.js";
+import { requireAdmin, requireAuth, signUser, requestOTP, verifyOTP } from "./auth.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -66,6 +66,8 @@ app.post("/api/auth/google", asyncRoute(async (req, res) => {
   );
   res.json({ token: signUser(user), user: { userId: user.userId, name: user.name, email: user.email, role: user.role, carts: user.carts } });
 }));
+app.post("/api/auth/request-otp", asyncRoute(requestOTP));
+app.post("/api/auth/verify-otp", asyncRoute(verifyOTP));
 app.get("/api/auth/me", requireAuth, (req, res) => res.json({ user: req.user }));
 
 app.get("/api/products", asyncRoute(async (req, res) => res.json(await Product.find().sort({ createdAt: -1 }))));

@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
+import bcryptjs from "bcryptjs";
 import { User } from "./models.js";
 
 const secret = () => {
@@ -320,6 +321,14 @@ export async function requestOTP(req, res) {
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+    
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: normalizedEmail }).lean();
+    if (existingUser) {
+      console.log(`   User ${normalizedEmail} already exists`);
+      return res.status(400).json({ message: "Account already exists. Please sign in with your email and password." });
+    }
+
     const otp = generateOTP();
     const expiresAt = Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000;
 
@@ -339,7 +348,7 @@ export async function requestOTP(req, res) {
   }
 }
 
-// Verify OTP and authenticate user
+// Verify OTP and authenticate user (for new accounts)
 export async function verifyOTP(req, res) {
   try {
     const { email, otp } = req.body;
@@ -363,13 +372,17 @@ export async function verifyOTP(req, res) {
       return res.status(400).json({ message: "Invalid verification code" });
     }
 
-    // OTP verified - create or update user
+    // Hash the password before saving
+    const hashedPassword = await bcryptjs.hash(storedData.password, 10);
+
+    // OTP verified - create new user
     const role = normalizedEmail === process.env.ADMIN_EMAIL?.toLowerCase() ? "ADMIN" : "USER";
-    const user = await User.findOneAndUpdate(
-      { email: normalizedEmail },
-      { $setOnInsert: { name: storedData.name, role } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    );
+    const user = await User.create({
+      name: storedData.name,
+      email: normalizedEmail,
+      password: hashedPassword,
+      role
+    });
 
     // Clean up OTP
     otpStore.delete(normalizedEmail);
@@ -378,5 +391,34 @@ export async function verifyOTP(req, res) {
   } catch (error) {
     console.error("Error verifying OTP:", error);
     res.status(500).json({ message: "Failed to verify code" });
+  }
+}
+
+// Login with email and password (for existing accounts)
+export async function loginWithPassword(req, res) {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    // Compare provided password with stored hash
+    const passwordMatch = await bcryptjs.compare(password, user.password);
+    if (!passwordMatch) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    console.log(`✅ User ${normalizedEmail} logged in successfully`);
+    res.json({ token: signUser(user), user: { userId: user.userId, name: user.name, email: user.email, role: user.role, carts: user.carts } });
+  } catch (error) {
+    console.error("Error logging in:", error);
+    res.status(500).json({ message: "Login failed" });
   }
 }

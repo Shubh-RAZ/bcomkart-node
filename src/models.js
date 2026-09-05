@@ -7,6 +7,7 @@ export const User = mongoose.model("User", new mongoose.Schema({
   userId: { type: String, default: id, unique: true },
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  password: { type: String, default: null }, // For OTP/password authentication
   carts: { type: [String], default: [] },
   role: { type: String, enum: ["ADMIN", "USER"], default: "USER" }
 }, { timestamps: true }));

@@ -11,6 +11,10 @@ import { requireAdmin, requireAuth, signUser } from "./auth.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
+const allowedOrigins = (process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN || "http://localhost:5173,https://bcomkart.netlify.app")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDirectory = path.join(currentDirectory, "../uploads");
 fs.mkdirSync(uploadsDirectory, { recursive: true });
@@ -19,7 +23,7 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, callback) => callback(null, file.mimetype.startsWith("image/"))
 });
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 app.use("/uploads", express.static(uploadsDirectory));
 
@@ -93,6 +97,7 @@ app.patch("/api/cart", requireAuth, asyncRoute(async (req, res) => {
 
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError || error.message === "Unexpected field") return res.status(400).json({ message: error.message });
+  if (error.message === "JWT_SECRET is not configured") return res.status(503).json({ message: "Authentication is temporarily unavailable. Configure JWT_SECRET on the API server." });
   if (error.name === "ValidationError" || error.code === 11000) return res.status(400).json({ message: error.message });
   console.error(error);
   res.status(500).json({ message: "Internal server error" });

@@ -1,7 +1,10 @@
 import jwt from "jsonwebtoken";
 import { User } from "./models.js";
 
-const secret = () => process.env.JWT_SECRET;
+const secret = () => {
+  if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET is not configured");
+  return process.env.JWT_SECRET;
+};
 
 export function signUser(user) {
   return jwt.sign({ userId: user.userId, role: user.role, email: user.email }, secret(), { expiresIn: "7d" });

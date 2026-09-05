@@ -11,6 +11,7 @@ import { requireAdmin, requireAuth, signUser } from "./auth.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
+app.set("trust proxy", 1);
 const allowedOrigins = (process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN || "http://localhost:5173,https://bcomkart.netlify.app")
   .split(",")
   .map((origin) => origin.trim())

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import mongoose from "mongoose";
 import multer from "multer";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Coupon, Order, Product, User } from "./models.js";
 import { requireAdmin, requireAuth, signUser } from "./auth.js";
@@ -20,15 +21,33 @@ const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDirectory = path.join(currentDirectory, "../uploads");
 fs.mkdirSync(uploadsDirectory, { recursive: true });
 const upload = multer({
-  dest: uploadsDirectory,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, callback) => callback(null, file.mimetype.startsWith("image/"))
 });
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
-app.use("/uploads", express.static(uploadsDirectory));
 
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+const imageBucket = () => new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: "productImages" });
+const saveImage = (file) => new Promise((resolve, reject) => {
+  const filename = randomUUID();
+  const stream = imageBucket().openUploadStream(filename, { metadata: { contentType: file.mimetype } });
+  stream.on("error", reject);
+  stream.on("finish", () => resolve(filename));
+  stream.end(file.buffer);
+});
+
+app.get("/uploads/:filename", asyncRoute(async (req, res) => {
+  const file = await imageBucket().find({ filename: req.params.filename }).next();
+  if (!file) return res.status(404).json({ message: "Image not found" });
+  res.type(file.metadata?.contentType || file.contentType || "application/octet-stream");
+  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  imageBucket().openDownloadStreamByName(req.params.filename).on("error", () => {
+    if (!res.headersSent) res.status(404).end();
+  }).pipe(res);
+}));
+
 const googleProfile = async (accessToken) => {
   const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!response.ok) throw new Error("Google token is invalid");
@@ -52,12 +71,16 @@ app.get("/api/auth/me", requireAuth, (req, res) => res.json({ user: req.user }))
 app.get("/api/products", asyncRoute(async (req, res) => res.json(await Product.find().sort({ createdAt: -1 }))));
 app.post("/api/products", requireAuth, requireAdmin, upload.single("image"), asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: "Product image is required" });
-  const product = await Product.create({ ...req.body, image: `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}` });
+  const filename = await saveImage(req.file);
+  const product = await Product.create({ ...req.body, image: `${req.protocol}://${req.get("host")}/uploads/${filename}` });
   res.status(201).json(product);
 }));
 app.patch("/api/products/:productId", requireAuth, requireAdmin, upload.single("image"), asyncRoute(async (req, res) => {
   const updates = { ...req.body };
-  if (req.file) updates.image = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+  if (req.file) {
+    const filename = await saveImage(req.file);
+    updates.image = `${req.protocol}://${req.get("host")}/uploads/${filename}`;
+  }
   const product = await Product.findOneAndUpdate({ productId: req.params.productId }, updates, { new: true, runValidators: true });
   if (!product) return res.status(404).json({ message: "Product not found" });
   res.json(product);

@@ -37,7 +37,7 @@ app.post("/api/auth/google", asyncRoute(async (req, res) => {
   const role = profile.email.toLowerCase() === process.env.ADMIN_EMAIL?.toLowerCase() ? "ADMIN" : undefined;
   const user = await User.findOneAndUpdate(
     { email: profile.email.toLowerCase() },
-    { $set: { name: profile.name || profile.email.split("@")[0], ...(role ? { role } : {}) } },
+    { $setOnInsert: { name: profile.name || profile.email.split("@")[0], role: role || "USER" } },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
   res.json({ token: signUser(user), user: { userId: user.userId, name: user.name, email: user.email, role: user.role, carts: user.carts } });

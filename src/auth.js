@@ -11,14 +11,21 @@ const secret = () => {
 const otpStore = new Map();
 const OTP_EXPIRY_MINUTES = 5;
 
-// Configure Nodemailer transporter
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-  },
-});
+// Configure Nodemailer transporter with fallback options
+const getTransporter = () => {
+  // Try standard Gmail SMTP first
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true, // Use TLS
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD,
+    },
+  });
+};
+
+const transporter = getTransporter();
 
 // Log email configuration on startup (for debugging)
 console.log("📧 Email Configuration:");

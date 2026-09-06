@@ -187,6 +187,20 @@ app.delete("/api/coupons/:couponId", requireAuth, requireAdmin, asyncRoute(async
   res.status(204).end();
 }));
 
+app.get("/api/admin/orders", requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const orders = await Order.find().sort({ createdAt: -1 }).lean();
+  const statuses = await OrderStatus.find({ orderId: { $in: orders.map((order) => order.orderId) } }).lean();
+  const statusByOrderId = new Map(statuses.map((status) => [status.orderId, status]));
+  const userIds = [...new Set(orders.map((order) => order.userId))];
+  const users = await User.find({ userId: { $in: userIds } }).select("userId name email").lean();
+  const userById = new Map(users.map((item) => [item.userId, item]));
+  res.json(orders.map((order) => ({
+    ...order,
+    customer: userById.get(order.userId) || { userId: order.userId, name: order.userName || "Customer" },
+    delivery: statusByOrderId.get(order.orderId) || { orderId: order.orderId, status: order.orderStatus || "PENDING", statusUpdates: [] }
+  })));
+}));
+
 app.get("/api/orders", requireAuth, asyncRoute(async (req, res) => res.json(await Order.find({ userId: req.user.userId }).sort({ createdAt: -1 }))));
 
 app.post("/api/orders", requireAuth, asyncRoute(async (req, res) => {
@@ -266,16 +280,24 @@ app.get("/api/orders/:orderId/status", asyncRoute(async (req, res) => {
 
 // Update order status (Admin only)
 app.patch("/api/orders/:orderId/status", requireAuth, requireAdmin, asyncRoute(async (req, res) => {
-  const { status, message } = req.body;
+  const { status, message, trackingNumber, estimatedDelivery } = req.body;
   
   if (!["PENDING", "CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED"].includes(status)) {
     return res.status(400).json({ message: "Invalid order status" });
   }
+  if (estimatedDelivery && Number.isNaN(Date.parse(estimatedDelivery))) {
+    return res.status(400).json({ message: "Estimated delivery must be a valid date" });
+  }
+  const order = await Order.findOne({ orderId: req.params.orderId }).lean();
+  if (!order) return res.status(404).json({ message: "Order not found" });
   
   const orderStatus = await OrderStatus.findOneAndUpdate(
     { orderId: req.params.orderId },
     { 
       status,
+      $setOnInsert: { userId: order.userId },
+      ...(trackingNumber !== undefined ? { trackingNumber: String(trackingNumber).trim() } : {}),
+      ...(estimatedDelivery ? { estimatedDelivery: new Date(estimatedDelivery) } : {}),
       $push: { 
         statusUpdates: {
           status,
@@ -284,7 +306,7 @@ app.patch("/api/orders/:orderId/status", requireAuth, requireAdmin, asyncRoute(a
         }
       }
     },
-    { new: true }
+    { new: true, upsert: true, setDefaultsOnInsert: true }
   );
   
   if (!orderStatus) return res.status(404).json({ message: "Order not found" });

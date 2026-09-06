@@ -432,3 +432,336 @@ export async function loginWithPassword(req, res) {
     res.status(500).json({ message: "Login failed" });
   }
 }
+
+// Generate beautiful HTML template for order confirmation email
+function generateOrderConfirmationEmailHTML(name, orderId, orderDate, products, totalAmount, trackingLink, deliveryAddress) {
+  const productListHTML = products.map(p => `
+    <tr>
+      <td style="padding: 12px; border-bottom: 1px solid #eee;">
+        <div style="font-weight: 600; color: #333;">${p.productName}</div>
+        <div style="font-size: 12px; color: #999;">Qty: ${p.quantity}</div>
+      </td>
+      <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">
+        <div style="font-weight: 600; color: #667eea;">₹${(p.price * p.quantity).toLocaleString('en-IN')}</div>
+        <div style="font-size: 12px; color: #999;">₹${p.price.toLocaleString('en-IN')} each</div>
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          background-color: #f8f9fa;
+        }
+        .container {
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+          background-color: #f8f9fa;
+        }
+        .email-wrapper {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 40px 30px;
+          text-align: center;
+        }
+        .logo {
+          font-size: 28px;
+          font-weight: bold;
+          margin-bottom: 10px;
+          letter-spacing: -0.5px;
+        }
+        .logo span {
+          color: #ffd700;
+        }
+        .header-subtitle {
+          font-size: 14px;
+          opacity: 0.95;
+          margin-top: 5px;
+        }
+        .content {
+          background: white;
+          padding: 40px 30px;
+        }
+        .greeting {
+          font-size: 18px;
+          font-weight: 600;
+          color: #333;
+          margin-bottom: 20px;
+        }
+        .order-id-section {
+          background: #f0f4f8;
+          padding: 20px;
+          border-left: 4px solid #667eea;
+          border-radius: 8px;
+          margin-bottom: 30px;
+        }
+        .order-id-label {
+          font-size: 12px;
+          text-transform: uppercase;
+          color: #999;
+          letter-spacing: 1px;
+          margin-bottom: 8px;
+        }
+        .order-id {
+          font-size: 20px;
+          font-weight: 700;
+          color: #667eea;
+          font-family: 'Courier New', monospace;
+        }
+        .order-details {
+          background: #f8f9fa;
+          padding: 20px;
+          border-radius: 8px;
+          margin-bottom: 30px;
+          font-size: 14px;
+        }
+        .detail-row {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 12px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid #e0e0e0;
+        }
+        .detail-row:last-child {
+          border-bottom: none;
+          margin-bottom: 0;
+          padding-bottom: 0;
+        }
+        .detail-label {
+          color: #666;
+          font-weight: 500;
+        }
+        .detail-value {
+          color: #333;
+          font-weight: 600;
+        }
+        .products-section {
+          margin-bottom: 30px;
+        }
+        .section-title {
+          font-size: 16px;
+          font-weight: 600;
+          color: #333;
+          margin-bottom: 15px;
+          padding-bottom: 10px;
+          border-bottom: 2px solid #667eea;
+        }
+        .products-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 20px;
+        }
+        .products-table tr td {
+          padding: 12px;
+          border-bottom: 1px solid #eee;
+        }
+        .products-table tr:last-child td {
+          border-bottom: none;
+        }
+        .total-section {
+          background: linear-gradient(135deg, #f5f7fa 0%, #f0f4f8 100%);
+          padding: 20px;
+          border-radius: 8px;
+          margin-bottom: 30px;
+        }
+        .total-row {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 10px;
+          font-size: 14px;
+        }
+        .total-row.grand-total {
+          font-size: 18px;
+          font-weight: 700;
+          color: #667eea;
+          border-top: 2px solid #ddd;
+          padding-top: 10px;
+          margin-top: 10px;
+        }
+        .track-button {
+          display: inline-block;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 14px 40px;
+          text-decoration: none;
+          border-radius: 6px;
+          font-weight: 600;
+          text-align: center;
+          width: 100%;
+          box-sizing: border-box;
+          margin-bottom: 20px;
+          transition: transform 0.2s ease;
+        }
+        .track-button:hover {
+          transform: translateY(-2px);
+        }
+        .cta-section {
+          text-align: center;
+          margin-bottom: 30px;
+        }
+        .delivery-info {
+          background: #e8f4f8;
+          border-left: 4px solid #17a2b8;
+          padding: 15px;
+          border-radius: 4px;
+          font-size: 13px;
+          color: #0c5460;
+          margin-bottom: 20px;
+        }
+        .footer {
+          background: #f8f9fa;
+          padding: 30px;
+          text-align: center;
+          font-size: 12px;
+          color: #999;
+          border-top: 1px solid #eee;
+        }
+        .footer-link {
+          color: #667eea;
+          text-decoration: none;
+        }
+        .address-block {
+          background: #f9f9f9;
+          padding: 15px;
+          border-radius: 6px;
+          font-size: 13px;
+          line-height: 1.6;
+          color: #333;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="email-wrapper">
+          <div class="header">
+            <div class="logo">bcom<span>.kart</span></div>
+            <div class="header-subtitle">Order Confirmation</div>
+          </div>
+          
+          <div class="content">
+            <div class="greeting">Hello ${name},</div>
+            
+            <p style="color: #666; margin-bottom: 30px;">Thank you for your order! We've received your order and will start processing it right away.</p>
+            
+            <div class="order-id-section">
+              <div class="order-id-label">Order Number</div>
+              <div class="order-id">${orderId}</div>
+            </div>
+            
+            <div class="order-details">
+              <div class="detail-row">
+                <span class="detail-label">Order Date:</span>
+                <span class="detail-value">${new Date(orderDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Payment Method:</span>
+                <span class="detail-value">Cash on Delivery (COD)</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Order Status:</span>
+                <span class="detail-value" style="color: #ffc107;">PENDING</span>
+              </div>
+            </div>
+            
+            <div class="products-section">
+              <div class="section-title">Order Items</div>
+              <table class="products-table">
+                ${productListHTML}
+              </table>
+            </div>
+            
+            <div class="total-section">
+              <div class="total-row">
+                <span>Subtotal:</span>
+                <span>₹${totalAmount.toLocaleString('en-IN')}</span>
+              </div>
+              <div class="total-row">
+                <span>Delivery Charge:</span>
+                <span>₹49</span>
+              </div>
+              <div class="total-row grand-total">
+                <span>Total Amount:</span>
+                <span>₹${(totalAmount + 49).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+            
+            <div class="delivery-info">
+              📦 <strong>Expected Delivery:</strong> Your order will be delivered within 3-5 business days.
+            </div>
+            
+            <div class="cta-section">
+              <a href="${trackingLink}" class="track-button">Track Your Order</a>
+            </div>
+            
+            <div class="section-title" style="margin-top: 30px;">Delivery Address</div>
+            <div class="address-block">
+              ${deliveryAddress}
+            </div>
+            
+            <p style="color: #666; margin-top: 30px; font-size: 13px;">
+              <strong>Need Help?</strong> If you have any questions about your order, please contact our customer support team. We're here to help!
+            </p>
+          </div>
+          
+          <div class="footer">
+            <div>© ${new Date().getFullYear()} bcom.kart. All rights reserved.</div>
+            <div style="margin-top: 10px;">
+              <a href="#" class="footer-link">Privacy Policy</a> | 
+              <a href="#" class="footer-link">Terms of Service</a> | 
+              <a href="#" class="footer-link">Contact Support</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+// Send order confirmation email
+export async function sendOrderConfirmationEmail(email, orderData, trackingLink) {
+  try {
+    const mailOptions = {
+      from: `"bcom.kart" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: `Order Confirmation: ${orderData.orderId}`,
+      html: generateOrderConfirmationEmailHTML(
+        orderData.userName,
+        orderData.orderId,
+        orderData.createdAt,
+        orderData.products,
+        orderData.totalAmount,
+        trackingLink,
+        `${orderData.address_line_1}<br/>${orderData.address_line_2 ? orderData.address_line_2 + '<br/>' : ''}${orderData.city}, ${orderData.state} - ${orderData.postalCode}<br/>📞 ${orderData.phone}`
+      ),
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Order confirmation email sent (Message ID: ${info.messageId})`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Failed to send order confirmation email:`, error.message);
+    // Don't throw - order should still be created even if email fails
+    return false;
+  }
+}

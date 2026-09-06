@@ -13,7 +13,7 @@ import { requireAdmin, requireAuth, signUser, checkEmailExists, requestOTP, veri
 const app = express();
 const port = process.env.PORT || 4000;
 app.set("trust proxy", 1);
-const allowedOrigins = (process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN || "http://localhost:5173,https://bcomkart.netlify.app")
+const allowedOrigins = (process.env.CLIENT_ORIGINS || process.env.CLIENT_ORIGIN || "http://localhost:5173,https://bcomkart.netlify.app,https://bcomkart.com,https://www.bcomkart.com")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
@@ -25,7 +25,7 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, callback) => callback(null, file.mimetype.startsWith("image/"))
 });
-app.use(cors({ origin: allowedOrigins }));
+app.use(cors({ origin: (origin, callback) => callback(null, !origin || allowedOrigins.includes(origin)) }));
 app.use(express.json());
 
 const asyncRoute = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);

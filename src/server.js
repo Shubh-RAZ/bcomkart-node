@@ -201,7 +201,26 @@ app.get("/api/admin/orders", requireAuth, requireAdmin, asyncRoute(async (req, r
   })));
 }));
 
-app.get("/api/orders", requireAuth, asyncRoute(async (req, res) => res.json(await Order.find({ userId: req.user.userId }).sort({ createdAt: -1 }))));
+app.get("/api/orders", requireAuth, asyncRoute(async (req, res) => {
+  const orders = await Order.find({ userId: req.user.userId }).sort({ createdAt: -1 }).lean();
+  const productIds = [...new Set(orders.flatMap((order) => order.products.map((item) => item.productId)))];
+  const products = await Product.find({ productId: { $in: productIds } }).select("productId productName image price").lean();
+  const productById = new Map(products.map((product) => [product.productId, product]));
+  const statuses = await OrderStatus.find({ orderId: { $in: orders.map((order) => order.orderId) } }).lean();
+  const statusByOrderId = new Map(statuses.map((status) => [status.orderId, status]));
+
+  res.json(orders.map((order) => ({
+    ...order,
+    productDetails: order.products.map((item) => ({
+      ...item,
+      product: productById.get(item.productId) || null
+    })),
+    delivery: statusByOrderId.get(order.orderId) || {
+      status: order.orderStatus || "PENDING",
+      statusUpdates: []
+    }
+  })));
+}));
 
 app.post("/api/orders", requireAuth, asyncRoute(async (req, res) => {
   // Validation for required fields

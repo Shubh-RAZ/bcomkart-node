@@ -26,6 +26,7 @@ const getTransporter = () => {
 };
 
 const transporter = getTransporter();
+const newUserNotificationEmail = () => process.env.NEW_USER_NOTIFICATION_EMAIL;
 
 // Log email configuration on startup (for debugging)
 console.log("📧 Email Configuration:");
@@ -64,6 +65,21 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
+export async function notifyNewUser(user) {
+  const recipient = newUserNotificationEmail();
+  if (!recipient) return;
+  try {
+    await transporter.sendMail({
+      from: `"Bcomkart" <${process.env.EMAIL_USER}>`,
+      to: recipient,
+      subject: `New Bcomkart user: ${user.email}`,
+      text: `A new user joined Bcomkart.\n\nName: ${user.name}\nEmail: ${user.email}\nGender: ${user.gender || "Not set"}\nUser ID: ${user.userId}\nCreated: ${user.createdAt}`,
+    });
+  } catch (error) {
+    console.error("Failed to send new-user notification:", error.message);
+  }
+}
+
 // Generate a 6-digit OTP
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -84,12 +100,15 @@ function generateOTPEmailHTML(name, otp) {
           box-sizing: border-box;
         }
         body {
+          width: 100% !important;
+          min-width: 100% !important;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
           line-height: 1.6;
           color: #333;
           background-color: #f8f9fa;
         }
         .container {
+          width: 100%;
           max-width: 600px;
           margin: 0 auto;
           padding: 20px;
@@ -163,6 +182,8 @@ function generateOTPEmailHTML(name, otp) {
           border-radius: 8px;
           display: inline-block;
           margin-bottom: 10px;
+          max-width: 100%;
+          word-break: break-all;
         }
         .otp-expiry {
           font-size: 12px;
@@ -201,13 +222,27 @@ function generateOTPEmailHTML(name, otp) {
           color: #666;
           margin-top: 20px;
         }
+        @media only screen and (max-width: 480px) {
+          .container { padding: 8px; }
+          .email-wrapper { border-radius: 8px; }
+          .header { padding: 28px 18px; }
+          .logo { font-size: 24px; }
+          .content { padding: 26px 18px; }
+          .greeting { font-size: 17px; }
+          .message { font-size: 13px; }
+          .otp-section { padding: 18px 12px; margin: 22px 0; }
+          .otp-code { width: 100%; padding: 14px 8px; font-size: 30px; letter-spacing: 4px; }
+          .warning { padding: 12px; font-size: 12px; }
+          .footer { padding: 22px 14px; }
+          .footer-link { display: inline-block; margin: 3px 0; }
+        }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="email-wrapper">
           <div class="header">
-            <div class="logo">bcom<span>.kart</span></div>
+            <div class="logo">bcom<span>kart</span></div>
             <div class="header-subtitle">Secure Account Verification</div>
           </div>
           
@@ -215,7 +250,11 @@ function generateOTPEmailHTML(name, otp) {
             <div class="greeting">Hello ${name},</div>
             
             <div class="message">
-              You've requested to sign in to your bcom.kart account. To complete the verification process, please use the code below. This code is valid for only 5 minutes.
+              You've requested to sign in to your Bcomkart account. To complete the verification process, please use the code below. This code is valid for only 5 minutes.
+            </div>
+
+            <div class="help-text" style="background: #f4f0ff; padding: 12px; border-radius: 6px; color: #57468a;">
+              We're a startup, so our emails might get flagged as junk. Please check your spam folder too.
             </div>
             
             <div class="otp-section">
@@ -225,7 +264,7 @@ function generateOTPEmailHTML(name, otp) {
             </div>
             
             <div class="warning">
-              🔒 <strong>Security Note:</strong> Never share this code with anyone, including bcom.kart staff. We will never ask for this code via email or phone.
+              🔒 <strong>Security Note:</strong> Never share this code with anyone, including Bcomkart staff. We will never ask for this code via email or phone.
             </div>
             
             <div class="help-text">
@@ -237,12 +276,12 @@ function generateOTPEmailHTML(name, otp) {
             
             <div class="message" style="font-size: 12px; color: #999; text-align: center;">
               Best regards,<br>
-              <strong>The bcom.kart Team</strong>
+              <strong>The Bcomkart Team</strong>
             </div>
           </div>
           
           <div class="footer">
-            <div>© ${new Date().getFullYear()} bcom.kart. All rights reserved.</div>
+            <div>© ${new Date().getFullYear()} Bcomkart. All rights reserved.</div>
             <div style="margin-top: 10px;">
               <a href="#" class="footer-link">Privacy Policy</a> | 
               <a href="#" class="footer-link">Terms of Service</a> | 
@@ -274,9 +313,9 @@ async function sendOTPEmail(email, otp, name) {
     console.log(`      Password preview: ${process.env.EMAIL_PASSWORD.substring(0, 4)}***${process.env.EMAIL_PASSWORD.slice(-4)}`);
     
     const mailOptions = {
-      from: `"bcom.kart" <${process.env.EMAIL_USER}>`,
+      from: `"Bcomkart" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: `Your bcom.kart Verification Code: ${otp}`,
+      subject: `Your Bcomkart Verification Code: ${otp}`,
       html: generateOTPEmailHTML(name, otp),
     };
 
@@ -331,17 +370,17 @@ export async function requestOTP(req, res) {
       return res.status(503).json({ message: "Email service is not configured on the server" });
     }
 
-    const { name, email, password } = req.body;
-    if (!name || !email || !password) {
+    const { name, email, password, gender } = req.body;
+    if (!name || !email || !password || !["Male", "Diva"].includes(gender)) {
       console.warn("❌ Missing required fields:", { name: !!name, email: !!email, password: !!password });
-      return res.status(400).json({ message: "Name, email, and password are required" });
+      return res.status(400).json({ message: "Name, email, password, and gender are required" });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
     const otp = generateOTP();
     const expiresAt = Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000;
 
-    otpStore.set(normalizedEmail, { otp, expiresAt, name: name.trim(), password });
+    otpStore.set(normalizedEmail, { otp, expiresAt, name: name.trim(), password, gender });
     console.log(`   OTP generated for ${normalizedEmail}: ${otp}`);
     
     // Send OTP email
@@ -388,6 +427,7 @@ export async function verifyOTP(req, res) {
     const role = normalizedEmail === process.env.ADMIN_EMAIL?.toLowerCase() ? "ADMIN" : "USER";
     const user = await User.create({
       name: storedData.name,
+      gender: storedData.gender,
       email: normalizedEmail,
       password: hashedPassword,
       role
@@ -396,7 +436,8 @@ export async function verifyOTP(req, res) {
     // Clean up OTP
     otpStore.delete(normalizedEmail);
 
-    res.json({ token: signUser(user), user: { userId: user.userId, name: user.name, email: user.email, role: user.role, carts: user.carts } });
+    await notifyNewUser(user);
+    res.json({ token: signUser(user), user: { userId: user.userId, name: user.name, gender: user.gender, email: user.email, role: user.role, carts: user.carts } });
   } catch (error) {
     console.error("Error verifying OTP:", error);
     res.status(500).json({ message: "Failed to verify code" });
@@ -425,7 +466,7 @@ export async function loginWithPassword(req, res) {
     }
 
     console.log(`✅ User ${normalizedEmail} logged in successfully`);
-    res.json({ token: signUser(user), user: { userId: user.userId, name: user.name, email: user.email, role: user.role, carts: user.carts } });
+    res.json({ token: signUser(user), user: { userId: user.userId, name: user.name, gender: user.gender, email: user.email, role: user.role, carts: user.carts } });
   } catch (error) {
     console.error("Error logging in:", error);
     res.status(500).json({ message: "Login failed" });
@@ -526,6 +567,7 @@ function generateOrderConfirmationEmailHTML(name, orderId, orderDate, products, 
           font-weight: 700;
           color: #667eea;
           font-family: 'Courier New', monospace;
+          overflow-wrap: anywhere;
         }
         .order-details {
           background: #f8f9fa;
@@ -569,10 +611,12 @@ function generateOrderConfirmationEmailHTML(name, orderId, orderDate, products, 
           width: 100%;
           border-collapse: collapse;
           margin-bottom: 20px;
+          table-layout: fixed;
         }
         .products-table tr td {
           padding: 12px;
           border-bottom: 1px solid #eee;
+          overflow-wrap: anywhere;
         }
         .products-table tr:last-child td {
           border-bottom: none;
@@ -646,6 +690,27 @@ function generateOrderConfirmationEmailHTML(name, orderId, orderDate, products, 
           font-size: 13px;
           line-height: 1.6;
           color: #333;
+          overflow-wrap: anywhere;
+        }
+        @media only screen and (max-width: 480px) {
+          .container { width: 100%; padding: 8px; }
+          .email-wrapper { border-radius: 8px; }
+          .header { padding: 28px 18px; }
+          .logo { font-size: 24px; }
+          .content { padding: 26px 18px; }
+          .greeting { font-size: 17px; }
+          .order-id-section, .order-details, .total-section { padding: 14px; }
+          .order-id { font-size: 16px; }
+          .detail-row, .total-row { align-items: flex-start; gap: 8px; }
+          .detail-row { flex-direction: column; margin-bottom: 10px; padding-bottom: 10px; }
+          .detail-value { overflow-wrap: anywhere; }
+          .products-table tr td { padding: 9px 5px; font-size: 12px; vertical-align: top; }
+          .products-table tr td:last-child { width: 38%; }
+          .total-row { font-size: 13px; }
+          .total-row.grand-total { font-size: 16px; }
+          .track-button { padding: 13px 16px; }
+          .footer { padding: 22px 14px; }
+          .footer-link { display: inline-block; margin: 3px 0; }
         }
       </style>
     </head>
@@ -661,6 +726,10 @@ function generateOrderConfirmationEmailHTML(name, orderId, orderDate, products, 
             <div class="greeting">Hello ${name},</div>
             
             <p style="color: #666; margin-bottom: 30px;">Thank you for your order! We've received your order and will start processing it right away.</p>
+
+            <div class="delivery-info" style="background: #f4f0ff; border-left-color: #667eea; color: #57468a;">
+              We're a startup, so our emails might get flagged as junk. Please check your spam folder too.
+            </div>
             
             <div class="order-id-section">
               <div class="order-id-label">Order Number</div>
@@ -723,7 +792,7 @@ function generateOrderConfirmationEmailHTML(name, orderId, orderDate, products, 
           </div>
           
           <div class="footer">
-            <div>© ${new Date().getFullYear()} bcom.kart. All rights reserved.</div>
+            <div>© ${new Date().getFullYear()} Bcomkart. All rights reserved.</div>
             <div style="margin-top: 10px;">
               <a href="#" class="footer-link">Privacy Policy</a> | 
               <a href="#" class="footer-link">Terms of Service</a> | 
@@ -741,7 +810,7 @@ function generateOrderConfirmationEmailHTML(name, orderId, orderDate, products, 
 export async function sendOrderConfirmationEmail(email, orderData, trackingLink) {
   try {
     const mailOptions = {
-      from: `"bcom.kart" <${process.env.EMAIL_USER}>`,
+      from: `"Bcomkart" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: `Order Confirmation: ${orderData.orderId}`,
       html: generateOrderConfirmationEmailHTML(

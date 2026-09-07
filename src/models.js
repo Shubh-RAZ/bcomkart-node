@@ -6,10 +6,12 @@ const id = () => randomUUID();
 export const User = mongoose.model("User", new mongoose.Schema({
   userId: { type: String, default: id, unique: true },
   name: { type: String, required: true, trim: true },
+  gender: { type: String, enum: ["Male", "Diva"], default: null },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, default: null }, // For OTP/password authentication
   carts: { type: [String], default: [] },
   wishlist: { type: [String], default: [] }, // Array of product IDs
+  bcomCoins: { type: Number, default: 0, min: 0 },
   requestedProducts: [{
     requestId: { type: String, default: id },
     productName: { type: String, required: true, trim: true },
@@ -26,7 +28,19 @@ export const Product = mongoose.model("Product", new mongoose.Schema({
   productDescription: { type: String, required: true, trim: true },
   price: { type: Number, required: true, min: 0 },
   discount: { type: Number, default: 0, min: 0, max: 100 },
+  category: { type: String, required: true, trim: true },
+  gender: { type: String, enum: ["Male", "Diva", "All"], default: "All" },
   image: { type: String, required: true, trim: true }
+}, { timestamps: true }));
+
+export const Category = mongoose.model("Category", new mongoose.Schema({
+  categoryId: { type: String, default: id, unique: true },
+  name: { type: String, required: true, unique: true, trim: true }
+}, { timestamps: true }));
+
+export const SiteSetting = mongoose.model("SiteSetting", new mongoose.Schema({
+  key: { type: String, unique: true, required: true },
+  value: { type: mongoose.Schema.Types.Mixed, default: false }
 }, { timestamps: true }));
 
 export const Order = mongoose.model("Order", new mongoose.Schema({
@@ -34,6 +48,8 @@ export const Order = mongoose.model("Order", new mongoose.Schema({
   userId: { type: String, required: true, index: true },
   products: [{ productId: { type: String, required: true }, quantity: { type: Number, default: 1, min: 1 } }],
   coupons: { type: [String], default: [] },
+  bcomCoinsUsed: { type: Number, default: 0, min: 0 },
+  bcomCoinsEarned: { type: Number, default: 0, min: 0 },
   address_line_1: { type: String, required: true },
   address_line_2: String,
   address_line_3: String,

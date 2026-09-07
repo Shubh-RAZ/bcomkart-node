@@ -1,6 +1,6 @@
-# bcom.kart API
+# Bcomkart API
 
-Express + MongoDB API for the bcom.kart storefront.
+Express + MongoDB API for the Bcomkart storefront.
 
 ## Run locally
 

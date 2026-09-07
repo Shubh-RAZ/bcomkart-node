@@ -7,8 +7,8 @@ import mongoose from "mongoose";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { Coupon, Order, OrderStatus, Product, User } from "./models.js";
-import { requireAdmin, requireAuth, signUser, checkEmailExists, requestOTP, verifyOTP, loginWithPassword, sendOrderConfirmationEmail } from "./auth.js";
+import { Category, Coupon, Order, OrderStatus, Product, SiteSetting, User } from "./models.js";
+import { requireAdmin, requireAuth, signUser, checkEmailExists, requestOTP, verifyOTP, loginWithPassword, notifyNewUser, sendOrderConfirmationEmail } from "./auth.js";
 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -55,16 +55,31 @@ const googleProfile = async (accessToken) => {
 };
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+app.get("/api/maintenance", asyncRoute(async (req, res) => {
+  const setting = await SiteSetting.findOne({ key: "globalKillSwitch" }).lean();
+  res.json({ active: setting?.value === true || process.env.KILL_SWITCH === "true" });
+}));
+app.patch("/api/maintenance", requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const active = req.body.active === true;
+  const setting = await SiteSetting.findOneAndUpdate(
+    { key: "globalKillSwitch" },
+    { value: active },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+  res.json({ active: setting.value === true });
+}));
 app.post("/api/auth/google", asyncRoute(async (req, res) => {
   if (!req.body.accessToken) return res.status(400).json({ message: "Google access token is required" });
   const profile = await googleProfile(req.body.accessToken);
   const role = profile.email.toLowerCase() === process.env.ADMIN_EMAIL?.toLowerCase() ? "ADMIN" : undefined;
+  const existingUser = await User.findOne({ email: profile.email.toLowerCase() });
   const user = await User.findOneAndUpdate(
     { email: profile.email.toLowerCase() },
     { $setOnInsert: { name: profile.name || profile.email.split("@")[0], role: role || "USER" } },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
-  res.json({ token: signUser(user), user: { userId: user.userId, name: user.name, email: user.email, role: user.role, carts: user.carts } });
+  if (!existingUser) await notifyNewUser(user);
+  res.json({ token: signUser(user), user: { userId: user.userId, name: user.name, gender: user.gender, email: user.email, role: user.role, carts: user.carts } });
 }));
 app.post("/api/auth/request-otp", asyncRoute(requestOTP));
 app.post("/api/auth/verify-otp", asyncRoute(verifyOTP));
@@ -72,6 +87,21 @@ app.post("/api/auth/check-email", asyncRoute(checkEmailExists));
 app.post("/api/auth/login", asyncRoute(loginWithPassword));
 app.get("/api/auth/me", requireAuth, (req, res) => res.json({ user: req.user }));
 
+app.get("/api/categories", asyncRoute(async (req, res) => {
+  const categories = await Category.find().sort({ name: 1 }).lean();
+  if (categories.length) return res.json(categories);
+  res.json((await Product.distinct("category")).filter(Boolean).sort().map((name) => ({ name })));
+}));
+app.post("/api/categories", requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const name = String(req.body.name || "").trim();
+  if (!name) return res.status(400).json({ message: "Category name is required" });
+  res.status(201).json(await Category.create({ name }));
+}));
+app.delete("/api/categories/:categoryId", requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const result = await Category.deleteOne({ categoryId: req.params.categoryId });
+  if (!result.deletedCount) return res.status(404).json({ message: "Category not found" });
+  res.status(204).end();
+}));
 app.get("/api/products", asyncRoute(async (req, res) => res.json(await Product.find({}).sort({ createdAt: -1 }))));
 app.get("/api/products/trending/deals", asyncRoute(async (req, res) => res.json(await Product.find({ discount: { $gt: 0 } }).sort({ discount: -1 }))));
 app.get("/api/products/requests", asyncRoute(async (req, res) => {
@@ -123,7 +153,10 @@ app.get("/api/users/me", requireAuth, asyncRoute(async (req, res) => {
 }));
 app.patch("/api/users/:userId/role", requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   if (!["ADMIN", "USER"].includes(req.body.role)) return res.status(400).json({ message: "Role must be ADMIN or USER" });
-  const user = await User.findOneAndUpdate({ userId: req.params.userId }, { role: req.body.role }, { new: true }).select("-__v");
+  const updates = { role: req.body.role };
+  if (req.body.gender !== undefined && !["Male", "Diva"].includes(req.body.gender)) return res.status(400).json({ message: "Gender must be Male or Diva" });
+  if (req.body.gender !== undefined) updates.gender = req.body.gender;
+  const user = await User.findOneAndUpdate({ userId: req.params.userId }, updates, { new: true }).select("-__v");
   if (!user) return res.status(404).json({ message: "User not found" });
   res.json(user);
 }));
@@ -274,6 +307,7 @@ app.get("/api/orders", requireAuth, asyncRoute(async (req, res) => {
 app.post("/api/orders", requireAuth, asyncRoute(async (req, res) => {
   // Validation for required fields
   const { products, address_line_1, city, state, phone, postalCode, userName, totalAmount } = req.body;
+  const requestedCoins = Math.max(0, Math.floor(Number(req.body.bcomCoinsUsed) || 0));
   
   if (!products || products.length === 0) {
     return res.status(400).json({ message: "Order must contain at least one product" });
@@ -290,6 +324,12 @@ app.post("/api/orders", requireAuth, asyncRoute(async (req, res) => {
       missingFields 
     });
   }
+
+  const user = await User.findOne({ userId: req.user.userId });
+  if (!user) return res.status(404).json({ message: "User account not found" });
+  if (requestedCoins > user.bcomCoins) return res.status(400).json({ message: "You do not have enough BcomCoins" });
+  if (requestedCoins > Number(totalAmount)) return res.status(400).json({ message: "BcomCoins cannot exceed the order amount" });
+  const coinsEarned = Math.floor(Math.max(0, Number(totalAmount) - requestedCoins) / 100);
   
   // Validate phone number (basic validation)
   if (!/^\d{10}$/.test(phone.replace(/\D/g, ''))) {
@@ -300,9 +340,14 @@ app.post("/api/orders", requireAuth, asyncRoute(async (req, res) => {
   const order = await Order.create({ 
     ...req.body, 
     userId: req.user.userId,
+    bcomCoinsUsed: requestedCoins,
+    bcomCoinsEarned: coinsEarned,
+    totalAmount: Math.max(0, Number(totalAmount) - requestedCoins),
     paymentMethod: "COD",
     orderStatus: "PENDING"
   });
+  user.bcomCoins = Math.max(0, user.bcomCoins - requestedCoins + coinsEarned);
+  await user.save();
   
   // Create order status tracking
   await OrderStatus.create({

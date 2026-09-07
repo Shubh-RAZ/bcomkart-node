@@ -10,6 +10,13 @@ export const User = mongoose.model("User", new mongoose.Schema({
   password: { type: String, default: null }, // For OTP/password authentication
   carts: { type: [String], default: [] },
   wishlist: { type: [String], default: [] }, // Array of product IDs
+  requestedProducts: [{
+    requestId: { type: String, default: id },
+    productName: { type: String, required: true, trim: true },
+    description: { type: String, default: "", trim: true },
+    status: { type: String, enum: ["REQUESTED", "ADDED", "DECLINED"], default: "REQUESTED" },
+    requestedAt: { type: Date, default: Date.now }
+  }],
   role: { type: String, enum: ["ADMIN", "USER"], default: "USER" }
 }, { timestamps: true }));
 

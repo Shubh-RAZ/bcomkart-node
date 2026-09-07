@@ -72,8 +72,27 @@ app.post("/api/auth/check-email", asyncRoute(checkEmailExists));
 app.post("/api/auth/login", asyncRoute(loginWithPassword));
 app.get("/api/auth/me", requireAuth, (req, res) => res.json({ user: req.user }));
 
-app.get("/api/products", asyncRoute(async (req, res) => res.json(await Product.find().sort({ createdAt: -1 }))));
+app.get("/api/products", asyncRoute(async (req, res) => res.json(await Product.find({}).sort({ createdAt: -1 }))));
 app.get("/api/products/trending/deals", asyncRoute(async (req, res) => res.json(await Product.find({ discount: { $gt: 0 } }).sort({ discount: -1 }))));
+app.get("/api/products/requests", asyncRoute(async (req, res) => {
+  const users = await User.find({ "requestedProducts.status": "REQUESTED" }).select("userId name email requestedProducts").lean();
+  const requests = users.flatMap((user) => (user.requestedProducts || []).filter((request) => request.status === "REQUESTED").map((request) => ({
+    ...request, requestedBy: user.userId, requesterName: user.name, requesterEmail: user.email
+  }))).sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+  res.json(requests);
+}));
+app.post("/api/products/requests", requireAuth, asyncRoute(async (req, res) => {
+  const productName = String(req.body.productName || "").trim();
+  if (!productName) return res.status(400).json({ message: "Product name is required" });
+  const user = await User.findOneAndUpdate(
+    { userId: req.user.userId },
+    { $push: { requestedProducts: { productName, description: String(req.body.description || "").trim() } } },
+    { new: true }
+  );
+  if (!user) return res.status(404).json({ message: "User not found" });
+  const createdRequest = user.requestedProducts[user.requestedProducts.length - 1];
+  res.status(201).json({ ...createdRequest.toObject(), requestedBy: user.userId, requesterName: user.name, requesterEmail: user.email });
+}));
 app.post("/api/products", requireAuth, requireAdmin, upload.single("image"), asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: "Product image is required" });
   const filename = await saveImage(req.file);
@@ -97,6 +116,11 @@ app.delete("/api/products/:productId", requireAuth, requireAdmin, asyncRoute(asy
 }));
 
 app.get("/api/users", requireAuth, requireAdmin, asyncRoute(async (req, res) => res.json(await User.find().select("-__v").sort({ createdAt: -1 }))));
+app.get("/api/users/me", requireAuth, asyncRoute(async (req, res) => {
+  const user = await User.findOne({ userId: req.user.userId }).select("-password -__v");
+  if (!user) return res.status(404).json({ message: "User not found" });
+  res.json(user);
+}));
 app.patch("/api/users/:userId/role", requireAuth, requireAdmin, asyncRoute(async (req, res) => {
   if (!["ADMIN", "USER"].includes(req.body.role)) return res.status(400).json({ message: "Role must be ADMIN or USER" });
   const user = await User.findOneAndUpdate({ userId: req.params.userId }, { role: req.body.role }, { new: true }).select("-__v");
@@ -199,6 +223,31 @@ app.get("/api/admin/orders", requireAuth, requireAdmin, asyncRoute(async (req, r
     customer: userById.get(order.userId) || { userId: order.userId, name: order.userName || "Customer" },
     delivery: statusByOrderId.get(order.orderId) || { orderId: order.orderId, status: order.orderStatus || "PENDING", statusUpdates: [] }
   })));
+}));
+app.get("/api/admin/product-requests", requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const users = await User.find({ "requestedProducts.0": { $exists: true } }).select("userId name email requestedProducts").lean();
+  res.json(users.flatMap((user) => (user.requestedProducts || []).map((request) => ({ ...request, requestedBy: user.userId, requesterName: user.name, requesterEmail: user.email }))));
+}));
+app.patch("/api/admin/product-requests/:requestId", requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  const status = String(req.body.status || "").toUpperCase();
+  if (!["REQUESTED", "ADDED", "DECLINED"].includes(status)) return res.status(400).json({ message: "Invalid request status" });
+  const user = await User.findOneAndUpdate({ "requestedProducts.requestId": req.params.requestId }, { $set: { "requestedProducts.$.status": status } }, { new: true }).select("userId name email requestedProducts").lean();
+  const request = user?.requestedProducts?.find((item) => item.requestId === req.params.requestId);
+  if (!request) return res.status(404).json({ message: "Product request not found" });
+  res.json({ ...request, requestedBy: user.userId, requesterName: user.name, requesterEmail: user.email });
+}));
+
+app.get("/api/notifications", requireAuth, asyncRoute(async (req, res) => {
+  const orders = await Order.find({ userId: req.user.userId }).select("orderId orderStatus createdAt").sort({ updatedAt: -1 }).limit(20).lean();
+  const statuses = await OrderStatus.find({ userId: req.user.userId }).sort({ updatedAt: -1 }).limit(20).lean();
+  const notifications = statuses.flatMap((item) => (item.statusUpdates || []).map((update) => ({
+    id: `${item.orderId}-${new Date(update.timestamp).getTime()}`,
+    title: `Order ${update.status.toLowerCase()}`,
+    message: update.message || `Your order #${item.orderId.slice(0, 8)} is ${update.status.toLowerCase()}.`,
+    orderId: item.orderId,
+    createdAt: update.timestamp
+  }))).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json(notifications.length ? notifications : orders.map((order) => ({ id: order.orderId, title: "Order update", message: `Order #${order.orderId.slice(0, 8)} is ${order.orderStatus.toLowerCase()}.`, orderId: order.orderId, createdAt: order.createdAt })));
 }));
 
 app.get("/api/orders", requireAuth, asyncRoute(async (req, res) => {
